@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.43.8.12551",
-      "templateHash": "9866717806708941746"
+      "version": "0.44.1.10279",
+      "templateHash": "9703090459739732216"
     }
   },
   "functions": [
@@ -121,7 +121,8 @@
         "Products",
         "Benefits",
         "CloudDimensions",
-        "Accounts"
+        "Accounts",
+        "Subscriptions"
       ]
     },
     "datasetsToDeploy": {
@@ -149,6 +150,10 @@
           "CDM_InvoiceSections",
           "CDM_BillingAccounts",
           "CDM_BillingProfiles"
+        ],
+        "datasets_Subscriptions": [
+          "CDM_BillingSubscriptions",
+          "CDM_Subscriptions"
         ]
       }
     },
@@ -232,6 +237,11 @@
         "input": "[format('CD{0}', padLeft(format('{0}', add(range(0, if(variables('hasCloudDimensions'), variables('dimensionMap').cloudDimensions, 0))[copyIndex('cloudDimensionsIndexes')], 1)), 2, '0'))]"
       },
       {
+        "name": "subscriptionIndexes",
+        "count": "[length(range(0, if(variables('hasSubscriptions'), variables('dimensionMap').subscriptions, 0)))]",
+        "input": "[format('SU{0}', padLeft(format('{0}', add(range(0, if(variables('hasSubscriptions'), variables('dimensionMap').subscriptions, 0))[copyIndex('subscriptionIndexes')], 1)), 2, '0'))]"
+      },
+      {
         "name": "storageAccountNames",
         "count": "[length(variables('allIndexes'))]",
         "input": "[toLower(format('{0}{1}', variables('storageAccountBaseName'), variables('allIndexes')[copyIndex('storageAccountNames')]))]"
@@ -265,6 +275,11 @@
         "name": "cloudDimensionStorageAccounts",
         "count": "[length(variables('cloudDimensionsIndexes'))]",
         "input": "[toLower(format('{0}{1}', variables('storageAccountBaseName'), variables('cloudDimensionsIndexes')[copyIndex('cloudDimensionStorageAccounts')]))]"
+      },
+      {
+        "name": "subscriptionStorageAccounts",
+        "count": "[length(variables('subscriptionIndexes'))]",
+        "input": "[toLower(format('{0}{1}', variables('storageAccountBaseName'), variables('subscriptionIndexes')[copyIndex('subscriptionStorageAccounts')]))]"
       },
       {
         "name": "publicStorageAccounts",
@@ -1787,6 +1802,41 @@
               "name": "CDM_BillingProfiles",
               "version": "3.0",
               "sub_path": "/v3"
+            },
+            {
+              "name": "CDM_Departments",
+              "version": "3.0",
+              "sub_path": "/v3"
+            },
+            {
+              "name": "CDM_EnrollmentAccounts",
+              "version": "3.0",
+              "sub_path": "/v3"
+            }
+          ]
+        },
+        {
+          "name": "Subscriptions",
+          "scenario_description": "Customer subscription lifecycle and billing-subscription mappings. Supports renewal forecasting, churn analysis, and entitlement reconciliation.",
+          "enabled": true,
+          "output_configuration": {
+            "storage_account": "<primarySAForSU>",
+            "container": "data",
+            "base_path": "/commerce-data-model/subscriptions/",
+            "additional_storage_accounts": [
+              "<secondarySAsForSU>"
+            ]
+          },
+          "tables": [
+            {
+              "name": "CDM_BillingSubscriptions",
+              "version": "3.0",
+              "sub_path": "/v3"
+            },
+            {
+              "name": "CDM_Subscriptions",
+              "version": "3.0",
+              "sub_path": "/v3"
             }
           ]
         }
@@ -1820,7 +1870,7 @@
       "kustoMaximumInstances": "[parameters('kustoMaximumInstances')]",
       "tags": "[variables('tags')]"
     },
-    "uploadInputParamsScriptContent": "#!/usr/bin/env bash\nset -euo pipefail\n\nACCOUNT_NAME=\"\"\nCONTAINER_NAME=\"\"\nPAYLOAD_BASE64=\"\"\n\nwhile [[ $# -gt 0 ]]; do\n  case \"$1\" in\n    --accountName)\n      ACCOUNT_NAME=\"$2\"\n      shift 2\n      ;;\n    --container)\n      CONTAINER_NAME=\"$2\"\n      shift 2\n      ;;\n    --payload)\n      PAYLOAD_BASE64=\"$2\"\n      shift 2\n      ;;\n    *)\n      echo \"Unknown argument: $1\" >&2\n      exit 2\n      ;;\n  esac\ndone\n\nif [[ -z \"$ACCOUNT_NAME\" || -z \"$CONTAINER_NAME\" || -z \"$PAYLOAD_BASE64\" ]]; then\n  echo \"Missing required args. Usage: --accountName <name> --container <name> --payload <base64>\" >&2\n  exit 2\nfi\n\nTIMESTAMP_UTC=\"$(date -u +%Y%m%dT%H%MZ)\"\nBLOB_NAME=\"input-parameters/params-${TIMESTAMP_UTC}.json\"\n\nTMP_FILE=\"$(mktemp)\"\ntrap 'rm -f \"$TMP_FILE\"' EXIT\n\necho \"$PAYLOAD_BASE64\" | base64 -d | jq '{\n  \"$schema\": \"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#\",\n  \"contentVersion\": \"1.0.0.0\",\n  \"parameters\": (. | to_entries | map({key: .key, value: {value: .value}}) | from_entries)\n}' > \"$TMP_FILE\"\n\naz storage blob upload \\\n  --auth-mode login \\\n  --account-name \"$ACCOUNT_NAME\" \\\n  --container-name \"$CONTAINER_NAME\" \\\n  --name \"$BLOB_NAME\" \\\n  --file \"$TMP_FILE\" \\\n  --overwrite true \\\n  1>/dev/null\n\nif [[ -n \"${AZ_SCRIPTS_OUTPUT_PATH:-}\" ]]; then\n  printf '{\"storageAccount\":\"%s\",\"container\":\"%s\",\"blobName\":\"%s\",\"timestampUtc\":\"%s\"}' \\\n    \"$ACCOUNT_NAME\" \"$CONTAINER_NAME\" \"$BLOB_NAME\" \"$TIMESTAMP_UTC\" \\\n    > \"$AZ_SCRIPTS_OUTPUT_PATH\"\nfi\n",
+    "uploadInputParamsScriptContent": "#!/usr/bin/env bash\r\nset -euo pipefail\r\n\r\nACCOUNT_NAME=\"\"\r\nCONTAINER_NAME=\"\"\r\nPAYLOAD_BASE64=\"\"\r\n\r\nwhile [[ $# -gt 0 ]]; do\r\n  case \"$1\" in\r\n    --accountName)\r\n      ACCOUNT_NAME=\"$2\"\r\n      shift 2\r\n      ;;\r\n    --container)\r\n      CONTAINER_NAME=\"$2\"\r\n      shift 2\r\n      ;;\r\n    --payload)\r\n      PAYLOAD_BASE64=\"$2\"\r\n      shift 2\r\n      ;;\r\n    *)\r\n      echo \"Unknown argument: $1\" >&2\r\n      exit 2\r\n      ;;\r\n  esac\r\ndone\r\n\r\nif [[ -z \"$ACCOUNT_NAME\" || -z \"$CONTAINER_NAME\" || -z \"$PAYLOAD_BASE64\" ]]; then\r\n  echo \"Missing required args. Usage: --accountName <name> --container <name> --payload <base64>\" >&2\r\n  exit 2\r\nfi\r\n\r\nTIMESTAMP_UTC=\"$(date -u +%Y%m%dT%H%MZ)\"\r\nBLOB_NAME=\"input-parameters/params-${TIMESTAMP_UTC}.json\"\r\n\r\nTMP_FILE=\"$(mktemp)\"\r\ntrap 'rm -f \"$TMP_FILE\"' EXIT\r\n\r\necho \"$PAYLOAD_BASE64\" | base64 -d | jq '{\r\n  \"$schema\": \"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#\",\r\n  \"contentVersion\": \"1.0.0.0\",\r\n  \"parameters\": (. | to_entries | map({key: .key, value: {value: .value}}) | from_entries)\r\n}' > \"$TMP_FILE\"\r\n\r\naz storage blob upload \\\r\n  --auth-mode login \\\r\n  --account-name \"$ACCOUNT_NAME\" \\\r\n  --container-name \"$CONTAINER_NAME\" \\\r\n  --name \"$BLOB_NAME\" \\\r\n  --file \"$TMP_FILE\" \\\r\n  --overwrite true \\\r\n  1>/dev/null\r\n\r\nif [[ -n \"${AZ_SCRIPTS_OUTPUT_PATH:-}\" ]]; then\r\n  printf '{\"storageAccount\":\"%s\",\"container\":\"%s\",\"blobName\":\"%s\",\"timestampUtc\":\"%s\"}' \\\r\n    \"$ACCOUNT_NAME\" \"$CONTAINER_NAME\" \"$BLOB_NAME\" \"$TIMESTAMP_UTC\" \\\r\n    > \"$AZ_SCRIPTS_OUTPUT_PATH\"\r\nfi\r\n",
     "kustoSnapshotLoadNotebookContent": "[variables('$fxv#0')]",
     "dataExplorationNotebookContent": "[variables('$fxv#1')]",
     "synapseKustoIngestionPipelineContent": "[variables('$fxv#2')]",
@@ -1840,7 +1890,8 @@
       "products": 2,
       "benefits": 2,
       "accounts": 2,
-      "cloudDimensions": 2
+      "cloudDimensions": 2,
+      "subscriptions": 2
     },
     "hasCharges": "[contains(variables('dataProductsLower'), 'charges')]",
     "hasPrices": "[contains(variables('dataProductsLower'), 'prices')]",
@@ -1848,7 +1899,8 @@
     "hasBenefits": "[contains(variables('dataProductsLower'), 'benefits')]",
     "hasAccounts": "[contains(variables('dataProductsLower'), 'accounts')]",
     "hasCloudDimensions": "[contains(variables('dataProductsLower'), 'clouddimensions')]",
-    "allIndexes": "[concat(variables('chargeIndexes'), variables('priceIndexes'), variables('productIndexes'), variables('benefitsIndexes'), variables('accountIndexes'), variables('cloudDimensionsIndexes'))]",
+    "hasSubscriptions": "[contains(variables('dataProductsLower'), 'subscriptions')]",
+    "allIndexes": "[concat(variables('chargeIndexes'), variables('priceIndexes'), variables('productIndexes'), variables('benefitsIndexes'), variables('accountIndexes'), variables('cloudDimensionsIndexes'), variables('subscriptionIndexes'))]",
     "storageAccountBaseName": "[toLower(format('{0}sa{1}', parameters('instanceName'), variables('regionShortMap')[variables('location')]))]",
     "storageAccountMap": {
       "Charges": "[variables('chargeStorageAccounts')]",
@@ -1856,7 +1908,8 @@
       "Products": "[variables('productStorageAccounts')]",
       "Benefits": "[variables('benefitsStorageAccounts')]",
       "Accounts": "[variables('accountStorageAccounts')]",
-      "CloudDimensions": "[variables('cloudDimensionStorageAccounts')]"
+      "CloudDimensions": "[variables('cloudDimensionStorageAccounts')]",
+      "Subscriptions": "[variables('subscriptionStorageAccounts')]"
     },
     "pwshParams": {
       "subscriptionId": "[variables('subscriptionId')]",
@@ -1893,7 +1946,7 @@
         "resources": "[variables('nspResources')]"
       }
     ],
-    "synapseResourceCheckScript": "#!/bin/bash\n\nset -e\nset -o errexit\nset -o nounset\nset -o pipefail\n\nresourceId=$1\n\n# parse subscriptionId from resourceId\nsubscriptionId=$(echo $resourceId | cut -d'/' -f3)\nresourceGroupName=$(echo $resourceId | cut -d'/' -f5)\n\n# login\naz login --identity\naz account set --subscription $subscriptionId\n\n# check if resource id exists in azure\nexists=$(az resource list -g $resourceGroupName --query '[].id | contains(@, `'$resourceId'`)' -o tsv)\n\n# Construct JSON output using jq\noutput=$(jq -n --arg resourceId \"$resourceId\" --arg exists \"$exists\" '{\"resourceId\": $resourceId, \"exists\": ($exists == \"true\")}')\n\necho $output >$AZ_SCRIPTS_OUTPUT_PATH",
+    "synapseResourceCheckScript": "#!/bin/bash\r\n\r\nset -e\r\nset -o errexit\r\nset -o nounset\r\nset -o pipefail\r\n\r\nresourceId=$1\r\n\r\n# parse subscriptionId from resourceId\r\nsubscriptionId=$(echo $resourceId | cut -d'/' -f3)\r\nresourceGroupName=$(echo $resourceId | cut -d'/' -f5)\r\n\r\n# login\r\naz login --identity\r\naz account set --subscription $subscriptionId\r\n\r\n# check if resource id exists in azure\r\nexists=$(az resource list -g $resourceGroupName --query '[].id | contains(@, `'$resourceId'`)' -o tsv)\r\n\r\n# Construct JSON output using jq\r\noutput=$(jq -n --arg resourceId \"$resourceId\" --arg exists \"$exists\" '{\"resourceId\": $resourceId, \"exists\": ($exists == \"true\")}')\r\n\r\necho $output >$AZ_SCRIPTS_OUTPUT_PATH",
     "environmentSuffixMap": "[__bicep.getEnvironmentSuffix()]",
     "synapseResourceId": "[resourceId(subscription().subscriptionId, variables('resourceGroupName'), 'Microsoft.Synapse/workspaces', variables('synapseWorkspaceName'))]",
     "kustoDatabaseNames": "[parameters('dataProductsArray')]",
@@ -1907,6 +1960,8 @@
       ]
     },
     "kustoDatabaseViewers": "[variables('kustoDatabaseViewerPermissions').systemAdmins]",
+    "kustoCalloutUriRegex": ".*",
+    "kustoCalloutPolicyJson": "[format('[{{\"CalloutType\":\"kusto\",\"CalloutUriRegex\":\"{0}\",\"CanCall\":true}}]', variables('kustoCalloutUriRegex'))]",
     "_1.environmentSuffixMap": {
       "storage": "[environment().suffixes.storage]",
       "acrLoginServer": "[environment().suffixes.acrLoginServer]",
@@ -1946,8 +2001,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "2639875794559268485"
+              "version": "0.44.1.10279",
+              "templateHash": "17906530009566172033"
             }
           },
           "parameters": {
@@ -2009,8 +2064,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "6132917863189881191"
+              "version": "0.44.1.10279",
+              "templateHash": "16845536896990899711"
             }
           },
           "parameters": {
@@ -2084,8 +2139,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "8185377227881362028"
+              "version": "0.44.1.10279",
+              "templateHash": "13204243892335445100"
             }
           },
           "parameters": {
@@ -2188,8 +2243,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9681323236165023980"
+              "version": "0.44.1.10279",
+              "templateHash": "9852673600241109788"
             }
           },
           "parameters": {
@@ -2250,8 +2305,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "8185377227881362028"
+              "version": "0.44.1.10279",
+              "templateHash": "13204243892335445100"
             }
           },
           "parameters": {
@@ -2349,8 +2404,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9681323236165023980"
+              "version": "0.44.1.10279",
+              "templateHash": "9852673600241109788"
             }
           },
           "parameters": {
@@ -2402,8 +2457,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9681323236165023980"
+              "version": "0.44.1.10279",
+              "templateHash": "9852673600241109788"
             }
           },
           "parameters": {
@@ -2482,8 +2537,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9879112902476063819"
+              "version": "0.44.1.10279",
+              "templateHash": "4583673213472679312"
             }
           },
           "parameters": {
@@ -2610,8 +2665,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9713655225053748590"
+              "version": "0.44.1.10279",
+              "templateHash": "1102260118831337495"
             }
           },
           "parameters": {
@@ -2705,8 +2760,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "7515521011829199633"
+                      "version": "0.44.1.10279",
+                      "templateHash": "6257918881171089017"
                     }
                   },
                   "parameters": {
@@ -2809,8 +2864,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "17630082791767948418"
+              "version": "0.44.1.10279",
+              "templateHash": "2421012368216532404"
             }
           },
           "parameters": {
@@ -2876,8 +2931,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5388846197397218835"
+              "version": "0.44.1.10279",
+              "templateHash": "4827445391336894813"
             }
           },
           "parameters": {
@@ -2947,8 +3002,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5388846197397218835"
+              "version": "0.44.1.10279",
+              "templateHash": "4827445391336894813"
             }
           },
           "parameters": {
@@ -3018,8 +3073,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5388846197397218835"
+              "version": "0.44.1.10279",
+              "templateHash": "4827445391336894813"
             }
           },
           "parameters": {
@@ -3091,8 +3146,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "2639875794559268485"
+              "version": "0.44.1.10279",
+              "templateHash": "17906530009566172033"
             }
           },
           "parameters": {
@@ -3157,8 +3212,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5388846197397218835"
+              "version": "0.44.1.10279",
+              "templateHash": "4827445391336894813"
             }
           },
           "parameters": {
@@ -3227,8 +3282,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5388846197397218835"
+              "version": "0.44.1.10279",
+              "templateHash": "4827445391336894813"
             }
           },
           "parameters": {
@@ -3316,8 +3371,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9879112902476063819"
+              "version": "0.44.1.10279",
+              "templateHash": "4583673213472679312"
             }
           },
           "parameters": {
@@ -3474,8 +3529,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "1122490708976169223"
+              "version": "0.44.1.10279",
+              "templateHash": "12075945010346761499"
             }
           },
           "functions": [
@@ -3622,7 +3677,7 @@
             "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
             "sparkPoolname": "medium",
             "isAadAdminValid": "[and(not(empty(tryGet(parameters('aadAdmin'), 'name'))), not(empty(tryGet(parameters('aadAdmin'), 'objectId'))))]",
-            "postDeploymentScriptContent": "#!/usr/bin/env bash\n# Assign both Synapse Reader and Synapse Administrator roles to a UAMI\n\nset -euo pipefail\n\n# Parse JSON parameters\nworkspaceName=$(jq -r '.workspaceName' <<<\"$@\")\nsynapseAdminRoleId=$(jq -r '.synapseAdminRoleId' <<<\"$@\")\nuserAssignedMIPrincipalId=$(jq -r '.userAssignedMIPrincipalId' <<<\"$@\")\nsubscriptionId=$(jq -r '.subscriptionId' <<<\"$@\")\nresourceGroup=$(jq -r '.resourceGroup' <<<\"$@\")\nviewerGroupObjectId=$(jq -r '.viewerGroupObjectId' <<<\"$@\")\nenableSox=$(jq -r '.enableSox' <<<\"$@\")\ncomplianceMonitoringSPNObjectId=$(jq -r '.complianceMonitoringSPNObjectId' <<<\"$@\")\n\necho \"Checking Synapse Administrator role assignment for UAMI: $userAssignedMIPrincipalId in workspace: $workspaceName\"\n\n\nrole_cleanup(){\n    #removing role assignments for dime uami\n    local principalId=\"${userAssignedMIPrincipalId:-}\"\n    local subId=\"${subscriptionId:-}\"\n    local rg=\"${resourceGroup:-}\"\n\n    if [[ -z \"$principalId\" || -z \"$subId\" || -z \"$rg\" ]]; then\n        echo \"Skipping role cleanup (missing required inputs)\"\n        return 0\n    fi\n\n    echo \"Removing Contributor and User Access Admin Temporary Role assignments\"\n    az role assignment delete --assignee \"$principalId\" --role \"Contributor\" --scope \"/subscriptions/$subId/resourceGroups/$rg\" -y || true\n    az role assignment delete --assignee \"$principalId\" --role \"User Access Administrator\" --scope \"/subscriptions/$subId/resourceGroups/$rg\" -y || true\n\n    echo \"Removed Contributor and User Access Admin Temporary Role assignments\"\n}\n\ntrap 'role_cleanup' EXIT\n\n\n# Allow time for Synapse role assignments to propagate\necho \"Waiting 5 minutes for RBAC propagation...\"\nsleep 5m\n\nassign_synapse_role() {\n    local synapseWs=\"$1\"\n    local role=\"$2\"\n    local assigneeObjectId=\"$3\"\n\n    echo -e \"Checking if $role role assignment exists for assignee ID: $assigneeObjectId\\n\"\n\n    existingRoleAssignments=$(az synapse role assignment list --workspace-name \"$synapseWs\" --role \"$role\" --assignee-object-id \"$assigneeObjectId\" --query [].id -o tsv 2>/dev/null)\n\n    if [[ $? -ne 0 ]]; then\n        echo -e \"Error: Failed to check existing role assignments.\\n\"\n        return 1\n    fi\n\n    if [[ -z \"$existingRoleAssignments\" ]]; then\n        echo -e \"$role role assignment does not exist for assignee ID: $assigneeObjectId on $synapseWs \\n\"\n        az synapse role assignment create --workspace-name \"$synapseWs\" --role \"$role\" --assignee-object-id \"$assigneeObjectId\"\n        echo -e \"$role role assignment created for assignee ID: $assigneeObjectId on $synapseWs \\n\"\n        isSynapseRbacUpdated=1\n        return 0\n    else\n        echo -e \"$role role assignment already exists for assignee ID: $assigneeObjectId on $synapseWs \\n\"\n        return 0\n    fi\n}\n\nexecute_with_retry() {\n    set +e\n    set +o pipefail\n\n    local max_retries=15\n    local delay=60\n    local attempt=1\n\n    while (( attempt <= max_retries )); do\n        echo \"Attempt $attempt: Executing command...\"\n\n        # Run the command with arguments\n        \"$@\"\n\n        if [[ $? -eq 0 ]]; then\n            echo \"Attempt $attempt: Success\"\n            return 0\n        else\n            echo \"Attempt $attempt: Command failed\"\n            if (( attempt < max_retries )); then\n                echo \"Retrying in $delay seconds...\"\n                sleep $delay\n            fi\n        fi\n\n        (( attempt++ ))\n    done\n\n    echo \"All retries failed.\"\n    set -e\n    set -o pipefail\n    return 1\n}\n\ncheck_user_synapse_admin() {\n    set +e\n    echo \"Checking if current user is Synapse Admin\"\n    stdout=$(mktemp)\n    stderr=$(mktemp)\n    az synapse role assignment list --workspace-name $workspaceName --role \"6e4bf58a-b8e1-4cc3-bbf9-d73143322b78\" > \"$stdout\" 2> \"$stderr\"\n    # local response=$(az synapse role assignment list --workspace-name $workspaceName --role \"6e4bf58a-b8e1-4cc3-bbf9-d73143322b78\" --assignee-object-id $userAssignedMIPrincipalId)\n    local error_message=$(cat \"$stderr\")\n    synapse_response=$(cat \"$stdout\")\n\n    local command_status=$?\n\n    local is_admin=false\n\n    if [[ $command_status -ne 0  || $error_message == *\"Code: Unauthorized\"* ]]; then\n        echo \"Synapse Role Assignment does not exist. Will need to elevate role\"\n        cat $stderr >&4\n         set -e\n         return 1\n    else\n        echo -e \"$synapse_response\" | jq . >/dev/null 2>&1\n        local json_status=$?\n\n        echo -e \"JQ Parse Status: $json_status\"\n        echo -e \"Response : $synapse_response\"\n        if [ $json_status -ne 0 ] || [ -z \"$synapse_response\" ] || [ -z \"${synapse_response+x}\" ]; then\n            # If the response is not valid JSON or empty, treat it as an error\n            echo \"Error: Command returned empty or non-JSON response: $synapse_response\"\n            set -e\n            rm \"$stdout\" \"$stderr\"\n            return 1\n        fi\n        # Check if the 'admins' group is present\n        exists=$(echo \"$synapse_response\" | jq '. | length')\n\n        if [ \"$exists\" -gt 0 ]; then\n           cat $stdout >&3\n           set -e\n           rm \"$stdout\" \"$stderr\"\n           return 0\n        fi\n    fi\n}\n\n if check_user_synapse_admin; then\n echo \"UAMI already has Synapse Administrator role. No action needed\"\n else\n  echo -e \"Creating Synapse workspace role assignment for User Assigned Managed Identity\\n\"\n  execute_with_retry az synapse role assignment create \\\n    --workspace-name \"$workspaceName\" \\\n    --role \"$synapseAdminRoleId\" \\\n    --assignee-object-id \"$userAssignedMIPrincipalId\" \\\n    --scope \"workspaces/$workspaceName\"\n  echo \"Synapse Administrator role assigned successfully.\"\n  sleep 5m\nfi\n\nif [ \"$enableSox\" == \"true\" ]; then\n echo \"SOX is enabled. Adding Synapse User role for Compliance Monitoring SPN\"\n execute_with_retry assign_synapse_role \"$workspaceName\" \"Synapse User\" \"$complianceMonitoringSPNObjectId\"\n echo \"Synapse User role assigned successfully for Compliance Monitoring SPN\"\nfi\n\n# Assign Synapse Monitoring Operator role to viewer group\necho -e \"Creating Synapse workspace role assignment for Viewer Group\\n\"\nexecute_with_retry assign_synapse_role \"$workspaceName\" \"Synapse Monitoring Operator\" \"$viewerGroupObjectId\"\n",
+            "postDeploymentScriptContent": "#!/usr/bin/env bash\r\n# Assign both Synapse Reader and Synapse Administrator roles to a UAMI\r\n\r\nset -euo pipefail\r\n\r\n# Parse JSON parameters\r\nworkspaceName=$(jq -r '.workspaceName' <<<\"$@\")\r\nsynapseAdminRoleId=$(jq -r '.synapseAdminRoleId' <<<\"$@\")\r\nuserAssignedMIPrincipalId=$(jq -r '.userAssignedMIPrincipalId' <<<\"$@\")\r\nsubscriptionId=$(jq -r '.subscriptionId' <<<\"$@\")\r\nresourceGroup=$(jq -r '.resourceGroup' <<<\"$@\")\r\nviewerGroupObjectId=$(jq -r '.viewerGroupObjectId' <<<\"$@\")\r\nenableSox=$(jq -r '.enableSox' <<<\"$@\")\r\ncomplianceMonitoringSPNObjectId=$(jq -r '.complianceMonitoringSPNObjectId' <<<\"$@\")\r\n\r\necho \"Checking Synapse Administrator role assignment for UAMI: $userAssignedMIPrincipalId in workspace: $workspaceName\"\r\n\r\n\r\nrole_cleanup(){\r\n    #removing role assignments for dime uami\r\n    local principalId=\"${userAssignedMIPrincipalId:-}\"\r\n    local subId=\"${subscriptionId:-}\"\r\n    local rg=\"${resourceGroup:-}\"\r\n\r\n    if [[ -z \"$principalId\" || -z \"$subId\" || -z \"$rg\" ]]; then\r\n        echo \"Skipping role cleanup (missing required inputs)\"\r\n        return 0\r\n    fi\r\n\r\n    echo \"Removing Contributor and User Access Admin Temporary Role assignments\"\r\n    az role assignment delete --assignee \"$principalId\" --role \"Contributor\" --scope \"/subscriptions/$subId/resourceGroups/$rg\" -y || true\r\n    az role assignment delete --assignee \"$principalId\" --role \"User Access Administrator\" --scope \"/subscriptions/$subId/resourceGroups/$rg\" -y || true\r\n\r\n    echo \"Removed Contributor and User Access Admin Temporary Role assignments\"\r\n}\r\n\r\ntrap 'role_cleanup' EXIT\r\n\r\n\r\n# Allow time for Synapse role assignments to propagate\r\necho \"Waiting 5 minutes for RBAC propagation...\"\r\nsleep 5m\r\n\r\nassign_synapse_role() {\r\n    local synapseWs=\"$1\"\r\n    local role=\"$2\"\r\n    local assigneeObjectId=\"$3\"\r\n\r\n    echo -e \"Checking if $role role assignment exists for assignee ID: $assigneeObjectId\\n\"\r\n\r\n    existingRoleAssignments=$(az synapse role assignment list --workspace-name \"$synapseWs\" --role \"$role\" --assignee-object-id \"$assigneeObjectId\" --query [].id -o tsv 2>/dev/null)\r\n\r\n    if [[ $? -ne 0 ]]; then\r\n        echo -e \"Error: Failed to check existing role assignments.\\n\"\r\n        return 1\r\n    fi\r\n\r\n    if [[ -z \"$existingRoleAssignments\" ]]; then\r\n        echo -e \"$role role assignment does not exist for assignee ID: $assigneeObjectId on $synapseWs \\n\"\r\n        az synapse role assignment create --workspace-name \"$synapseWs\" --role \"$role\" --assignee-object-id \"$assigneeObjectId\"\r\n        echo -e \"$role role assignment created for assignee ID: $assigneeObjectId on $synapseWs \\n\"\r\n        isSynapseRbacUpdated=1\r\n        return 0\r\n    else\r\n        echo -e \"$role role assignment already exists for assignee ID: $assigneeObjectId on $synapseWs \\n\"\r\n        return 0\r\n    fi\r\n}\r\n\r\nexecute_with_retry() {\r\n    set +e\r\n    set +o pipefail\r\n\r\n    local max_retries=15\r\n    local delay=60\r\n    local attempt=1\r\n\r\n    while (( attempt <= max_retries )); do\r\n        echo \"Attempt $attempt: Executing command...\"\r\n\r\n        # Run the command with arguments\r\n        \"$@\"\r\n\r\n        if [[ $? -eq 0 ]]; then\r\n            echo \"Attempt $attempt: Success\"\r\n            return 0\r\n        else\r\n            echo \"Attempt $attempt: Command failed\"\r\n            if (( attempt < max_retries )); then\r\n                echo \"Retrying in $delay seconds...\"\r\n                sleep $delay\r\n            fi\r\n        fi\r\n\r\n        (( attempt++ ))\r\n    done\r\n\r\n    echo \"All retries failed.\"\r\n    set -e\r\n    set -o pipefail\r\n    return 1\r\n}\r\n\r\ncheck_user_synapse_admin() {\r\n    set +e\r\n    echo \"Checking if current user is Synapse Admin\"\r\n    stdout=$(mktemp)\r\n    stderr=$(mktemp)\r\n    az synapse role assignment list --workspace-name $workspaceName --role \"6e4bf58a-b8e1-4cc3-bbf9-d73143322b78\" > \"$stdout\" 2> \"$stderr\"\r\n    # local response=$(az synapse role assignment list --workspace-name $workspaceName --role \"6e4bf58a-b8e1-4cc3-bbf9-d73143322b78\" --assignee-object-id $userAssignedMIPrincipalId)\r\n    local error_message=$(cat \"$stderr\")\r\n    synapse_response=$(cat \"$stdout\")\r\n\r\n    local command_status=$?\r\n\r\n    local is_admin=false\r\n\r\n    if [[ $command_status -ne 0  || $error_message == *\"Code: Unauthorized\"* ]]; then\r\n        echo \"Synapse Role Assignment does not exist. Will need to elevate role\"\r\n        cat $stderr >&4\r\n         set -e\r\n         return 1\r\n    else\r\n        echo -e \"$synapse_response\" | jq . >/dev/null 2>&1\r\n        local json_status=$?\r\n\r\n        echo -e \"JQ Parse Status: $json_status\"\r\n        echo -e \"Response : $synapse_response\"\r\n        if [ $json_status -ne 0 ] || [ -z \"$synapse_response\" ] || [ -z \"${synapse_response+x}\" ]; then\r\n            # If the response is not valid JSON or empty, treat it as an error\r\n            echo \"Error: Command returned empty or non-JSON response: $synapse_response\"\r\n            set -e\r\n            rm \"$stdout\" \"$stderr\"\r\n            return 1\r\n        fi\r\n        # Check if the 'admins' group is present\r\n        exists=$(echo \"$synapse_response\" | jq '. | length')\r\n\r\n        if [ \"$exists\" -gt 0 ]; then\r\n           cat $stdout >&3\r\n           set -e\r\n           rm \"$stdout\" \"$stderr\"\r\n           return 0\r\n        fi\r\n    fi\r\n}\r\n\r\n if check_user_synapse_admin; then\r\n echo \"UAMI already has Synapse Administrator role. No action needed\"\r\n else\r\n  echo -e \"Creating Synapse workspace role assignment for User Assigned Managed Identity\\n\"\r\n  execute_with_retry az synapse role assignment create \\\r\n    --workspace-name \"$workspaceName\" \\\r\n    --role \"$synapseAdminRoleId\" \\\r\n    --assignee-object-id \"$userAssignedMIPrincipalId\" \\\r\n    --scope \"workspaces/$workspaceName\"\r\n  echo \"Synapse Administrator role assigned successfully.\"\r\n  sleep 5m\r\nfi\r\n\r\nif [ \"$enableSox\" == \"true\" ]; then\r\n echo \"SOX is enabled. Adding Synapse User role for Compliance Monitoring SPN\"\r\n execute_with_retry assign_synapse_role \"$workspaceName\" \"Synapse User\" \"$complianceMonitoringSPNObjectId\"\r\n echo \"Synapse User role assigned successfully for Compliance Monitoring SPN\"\r\nfi\r\n\r\n# Assign Synapse Monitoring Operator role to viewer group\r\necho -e \"Creating Synapse workspace role assignment for Viewer Group\\n\"\r\nexecute_with_retry assign_synapse_role \"$workspaceName\" \"Synapse Monitoring Operator\" \"$viewerGroupObjectId\"\r\n",
             "sparkConfigs": [
               "[variables('$fxv#0')]"
             ]
@@ -3763,8 +3818,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "17371919521253230038"
+                      "version": "0.44.1.10279",
+                      "templateHash": "18444294611436477280"
                     }
                   },
                   "parameters": {
@@ -3851,8 +3906,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "5388846197397218835"
+                      "version": "0.44.1.10279",
+                      "templateHash": "4827445391336894813"
                     }
                   },
                   "parameters": {
@@ -3945,8 +4000,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "9879112902476063819"
+                      "version": "0.44.1.10279",
+                      "templateHash": "4583673213472679312"
                     }
                   },
                   "parameters": {
@@ -4085,8 +4140,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "13327507640906252033"
+                      "version": "0.44.1.10279",
+                      "templateHash": "13830670059131434705"
                     }
                   },
                   "parameters": {
@@ -4179,7 +4234,7 @@
                       "sparkConfigName": "[parameters('sparkConfigName')]",
                       "sparkConfig": "[variables('sparkConfigObject')]"
                     },
-                    "sparkConfigsScript": "# Fail script if any command fails\n$ErrorActionPreference = \"Stop\"\n\n# Assign script params to parameters object variable\n$parameters = $args -join ' ' | ConvertFrom-Json -Depth 30\n\n$subscriptionId = $parameters.subscriptionId\n$computeWorkspaceName = $parameters.computeWorkspaceName\n$configName = $parameters.sparkConfigName\n$sparkConfig = $parameters.sparkConfig\n$definitionFile = \"$($configName).json\"\n\n# create definition file\n$sparkConfig | ConvertTo-Json -Depth 100 -Compress | Out-File $definitionFile\n\n# Set the specified subscription for the Azure CLI session\nSet-AzContext -SubscriptionId $subscriptionId\n\n# Install the Azure PowerShell module for Azure Synapse Analytics\nWrite-Host \"Start install Az.Synapse module.\"\nif (-not (Get-Module -ListAvailable -Name Az.Synapse)) {\n    Install-Module -Name Az.Synapse -AllowClobber -Force\n}\nWrite-Host \"Complete install Az.Synapse module.\"\n\n# Load Az.Synapse Module\nWrite-Host \"Start import Az.Synapse module.\"\nImport-Module Az.Synapse\nWrite-Host \"Complete import Az.Synapse module.\"\n\n# Check if config already exists, if it exists update the config file\nif (Get-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName | Where Name -eq $configName) {\n    Write-Output \"Spark configuration $configName exists, updating config file.\"\n\n    # Export the existing spark configuration and overwrite the config file with the existing config\n    Export-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -Name $configName -OutputFolder  .\n    \n    # Read the existing spark configuration from the overwriten config file\n    $oldSparkConfig = Get-Content -Path $definitionFile | ConvertFrom-Json -Depth 100\n\n    # Update existing configs with the new configs\n    $sparkConfig.configs.PSObject.Properties | ForEach-Object {\n        $oldSparkConfig.Configs | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force\n    }\n\n    # Update existing configs with the new configMergeRule\n    $sparkConfig.configMergeRule.PSObject.Properties | ForEach-Object {\n        $oldSparkConfig.ConfigMergeRule | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force\n    }\n\n    # Write the updated configs to a file\n    $oldSparkConfig | ConvertTo-Json -Depth 100 -Compress | Out-File $definitionFile\n}\n\nWrite-Output \"Updating $configName spark configuration in $computeWorkspaceName.\"\n\n# Update the spark configuration\nNew-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -DefinitionFile $definitionFile\n\n# Get the updated configs, convert Json properties from pascalCase to camelCase\n$updatedConfig = (Get-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -Name $configName | ConvertTo-Json -Depth 100 -Compress)\n$configsInCamelCase = [regex]::Replace(\n    $updatedConfig, \n    '\"([a-zA-Z])([a-zA-Z]+)\":', \n    { \"`\"$($args[0].Groups[1].Value.ToLower())$($args[0].Groups[2].Value)`\":\" }\n)\n\n$DeploymentScriptOutputs = @{}\n$DeploymentScriptOutputs['Name'] = $configName\n$DeploymentScriptOutputs['Content'] = $configsInCamelCase"
+                    "sparkConfigsScript": "# Fail script if any command fails\r\n$ErrorActionPreference = \"Stop\"\r\n\r\n# Assign script params to parameters object variable\r\n$parameters = $args -join ' ' | ConvertFrom-Json -Depth 30\r\n\r\n$subscriptionId = $parameters.subscriptionId\r\n$computeWorkspaceName = $parameters.computeWorkspaceName\r\n$configName = $parameters.sparkConfigName\r\n$sparkConfig = $parameters.sparkConfig\r\n$definitionFile = \"$($configName).json\"\r\n\r\n# create definition file\r\n$sparkConfig | ConvertTo-Json -Depth 100 -Compress | Out-File $definitionFile\r\n\r\n# Set the specified subscription for the Azure CLI session\r\nSet-AzContext -SubscriptionId $subscriptionId\r\n\r\n# Install the Azure PowerShell module for Azure Synapse Analytics\r\nWrite-Host \"Start install Az.Synapse module.\"\r\nif (-not (Get-Module -ListAvailable -Name Az.Synapse)) {\r\n    Install-Module -Name Az.Synapse -AllowClobber -Force\r\n}\r\nWrite-Host \"Complete install Az.Synapse module.\"\r\n\r\n# Load Az.Synapse Module\r\nWrite-Host \"Start import Az.Synapse module.\"\r\nImport-Module Az.Synapse\r\nWrite-Host \"Complete import Az.Synapse module.\"\r\n\r\n# Check if config already exists, if it exists update the config file\r\nif (Get-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName | Where Name -eq $configName) {\r\n    Write-Output \"Spark configuration $configName exists, updating config file.\"\r\n\r\n    # Export the existing spark configuration and overwrite the config file with the existing config\r\n    Export-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -Name $configName -OutputFolder  .\r\n    \r\n    # Read the existing spark configuration from the overwriten config file\r\n    $oldSparkConfig = Get-Content -Path $definitionFile | ConvertFrom-Json -Depth 100\r\n\r\n    # Update existing configs with the new configs\r\n    $sparkConfig.configs.PSObject.Properties | ForEach-Object {\r\n        $oldSparkConfig.Configs | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force\r\n    }\r\n\r\n    # Update existing configs with the new configMergeRule\r\n    $sparkConfig.configMergeRule.PSObject.Properties | ForEach-Object {\r\n        $oldSparkConfig.ConfigMergeRule | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force\r\n    }\r\n\r\n    # Write the updated configs to a file\r\n    $oldSparkConfig | ConvertTo-Json -Depth 100 -Compress | Out-File $definitionFile\r\n}\r\n\r\nWrite-Output \"Updating $configName spark configuration in $computeWorkspaceName.\"\r\n\r\n# Update the spark configuration\r\nNew-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -DefinitionFile $definitionFile\r\n\r\n# Get the updated configs, convert Json properties from pascalCase to camelCase\r\n$updatedConfig = (Get-AzSynapseSparkConfiguration -WorkspaceName $computeWorkspaceName -Name $configName | ConvertTo-Json -Depth 100 -Compress)\r\n$configsInCamelCase = [regex]::Replace(\r\n    $updatedConfig, \r\n    '\"([a-zA-Z])([a-zA-Z]+)\":', \r\n    { \"`\"$($args[0].Groups[1].Value.ToLower())$($args[0].Groups[2].Value)`\":\" }\r\n)\r\n\r\n$DeploymentScriptOutputs = @{}\r\n$DeploymentScriptOutputs['Name'] = $configName\r\n$DeploymentScriptOutputs['Content'] = $configsInCamelCase"
                   },
                   "resources": [
                     {
@@ -4230,8 +4285,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.43.8.12551",
-                              "templateHash": "9879112902476063819"
+                              "version": "0.44.1.10279",
+                              "templateHash": "4583673213472679312"
                             }
                           },
                           "parameters": {
@@ -4394,8 +4449,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "13945643682948975417"
+              "version": "0.44.1.10279",
+              "templateHash": "15075395740201644281"
             }
           },
           "parameters": {
@@ -4485,8 +4540,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "5388846197397218835"
+                      "version": "0.44.1.10279",
+                      "templateHash": "4827445391336894813"
                     }
                   },
                   "parameters": {
@@ -4583,6 +4638,15 @@
           },
           "complianceMonitoringSpnAppId": {
             "value": "[parameters('complianceMonitoringSpnAppId')]"
+          },
+          "calloutPolicy": {
+            "value": "[variables('kustoCalloutPolicyJson')]"
+          },
+          "calloutPolicyUamiResourceId": {
+            "value": "[reference('userAssignedMI').outputs.userAssignedMIId.value]"
+          },
+          "calloutPolicyUamiPrincipalId": {
+            "value": "[reference('userAssignedMI').outputs.principalId.value]"
           }
         },
         "template": {
@@ -4592,8 +4656,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "5953217172758409973"
+              "version": "0.44.1.10279",
+              "templateHash": "2640098019520256048"
             }
           },
           "definitions": {
@@ -4787,6 +4851,34 @@
               "metadata": {
                 "description": "Compliance Monitoring SPN Application (Client) ID for SOX Kusto cluster monitoring"
               }
+            },
+            "calloutPolicy": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Kusto callout policy JSON array string. Passed through to kusto_cluster.bicep. Empty string preserves defaults."
+              }
+            },
+            "allowedFqdnList": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "List of allowed FQDNs for egress from the Kusto cluster. Passed through to kusto_cluster.bicep."
+              }
+            },
+            "calloutPolicyUamiResourceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of an EXISTING User Assigned Managed Identity to use for the callout-policy deployment script. Required when calloutPolicy is non-empty. Typically the wrapper UAMI created in finops.bicep so we avoid creating a second identity."
+              }
+            },
+            "calloutPolicyUamiPrincipalId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Principal (object) ID of the same UAMI referenced by calloutPolicyUamiResourceId. Required when calloutPolicy is non-empty. Used to grant AllDatabasesAdmin on the cluster so the deployment script can run cluster-scoped admin commands."
+              }
             }
           },
           "variables": {
@@ -4831,6 +4923,9 @@
                   },
                   "tags": {
                     "value": "[variables('kustoTags')]"
+                  },
+                  "allowedFqdnList": {
+                    "value": "[parameters('allowedFqdnList')]"
                   }
                 },
                 "template": {
@@ -4839,8 +4934,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "4652477658965378271"
+                      "version": "0.44.1.10279",
+                      "templateHash": "14685762150316106810"
                     }
                   },
                   "parameters": {
@@ -4914,7 +5009,7 @@
                       "type": "array",
                       "defaultValue": [],
                       "metadata": {
-                        "description": "List of allowed FQDNs(Fully Qualified Domain Name) for egress from Cluster"
+                        "description": "List of allowed FQDNs (Fully Qualified Domain Name) for egress from the Kusto cluster. Azure does NOT accept wildcards in this list — only concrete FQDNs (e.g., \"cluster.eastus.kusto.windows.net\"). Leave empty to disable the FQDN egress restriction entirely (restrictOutboundNetworkAccess will be Disabled); supply explicit FQDNs to lock egress down (restrictOutboundNetworkAccess will be Enabled)."
                       }
                     },
                     "userAssignedIdentities": {
@@ -4970,7 +5065,7 @@
                         "enableDoubleEncryption": false,
                         "engineType": "[parameters('engineType')]",
                         "acceptedAudiences": [],
-                        "restrictOutboundNetworkAccess": "Enabled",
+                        "restrictOutboundNetworkAccess": "[if(empty(parameters('allowedFqdnList')), 'Disabled', 'Enabled')]",
                         "allowedFqdnList": "[parameters('allowedFqdnList')]",
                         "publicNetworkAccess": "[parameters('publicNetworkAccess')]",
                         "allowedIpRangeList": [],
@@ -5025,8 +5120,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "5433190119306689489"
+                      "version": "0.44.1.10279",
+                      "templateHash": "17618000142406797934"
                     }
                   },
                   "parameters": {
@@ -5123,8 +5218,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "7342501761411127539"
+                      "version": "0.44.1.10279",
+                      "templateHash": "10691039031481088182"
                     }
                   },
                   "parameters": {
@@ -5248,8 +5343,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "7342501761411127539"
+                      "version": "0.44.1.10279",
+                      "templateHash": "10691039031481088182"
                     }
                   },
                   "parameters": {
@@ -5370,8 +5465,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "4682424534670987653"
+                      "version": "0.44.1.10279",
+                      "templateHash": "7375986583220396510"
                     }
                   },
                   "parameters": {
@@ -5480,8 +5575,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.43.8.12551",
-                      "templateHash": "4682424534670987653"
+                      "version": "0.44.1.10279",
+                      "templateHash": "7375986583220396510"
                     }
                   },
                   "parameters": {
@@ -5551,12 +5646,255 @@
               "dependsOn": [
                 "kustoCluster"
               ]
+            },
+            "grantCalloutPolicyAdmin": {
+              "condition": "[not(empty(parameters('calloutPolicy')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[__bicep.getSafeDeploymentName(format('{0}-callout-admin', parameters('kustoClusterName')))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "clusterName": {
+                    "value": "[parameters('kustoClusterName')]"
+                  },
+                  "principalId": {
+                    "value": "[parameters('calloutPolicyUamiPrincipalId')]"
+                  },
+                  "principalType": {
+                    "value": "App"
+                  },
+                  "role": {
+                    "value": "AllDatabasesAdmin"
+                  },
+                  "tenantId": {
+                    "value": "[subscription().tenantId]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.44.1.10279",
+                      "templateHash": "7375986583220396510"
+                    }
+                  },
+                  "parameters": {
+                    "clusterName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The name of the Kusto Cluster"
+                      }
+                    },
+                    "principalId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The principal ID assigned to the cluster principal. It can be application ID or security group name"
+                      }
+                    },
+                    "principalType": {
+                      "type": "string",
+                      "allowedValues": [
+                        "App",
+                        "Group",
+                        "User"
+                      ],
+                      "metadata": {
+                        "description": "Principal type"
+                      }
+                    },
+                    "role": {
+                      "type": "string",
+                      "allowedValues": [
+                        "AllDatabasesAdmin",
+                        "AllDatabasesMonitor",
+                        "AllDatabasesViewer"
+                      ],
+                      "metadata": {
+                        "description": "Cluster principal role"
+                      }
+                    },
+                    "tenantId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The tenant id of the principal"
+                      }
+                    }
+                  },
+                  "variables": {
+                    "roleShortName": {
+                      "AllDatabasesAdmin": "adm",
+                      "AllDatabasesMonitor": "mon",
+                      "AllDatabasesViewer": "vwr"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Kusto/clusters/principalAssignments",
+                      "apiVersion": "2023-08-15",
+                      "name": "[format('{0}/{1}', parameters('clusterName'), guid(parameters('tenantId'), parameters('principalId'), variables('roleShortName')[parameters('role')]))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "role": "[parameters('role')]",
+                        "principalType": "[parameters('principalType')]",
+                        "tenantId": "[parameters('tenantId')]"
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "kustoCluster"
+              ]
+            },
+            "setKustoCalloutPolicy": {
+              "condition": "[not(empty(parameters('calloutPolicy')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[__bicep.getSafeDeploymentName(format('set-{0}-callout-policy', parameters('kustoClusterName')))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "scriptName": {
+                    "value": "[format('set-{0}-callout-policy', parameters('kustoClusterName'))]"
+                  },
+                  "scriptVersion": {
+                    "value": "2.53.0"
+                  },
+                  "scriptKind": {
+                    "value": "AzureCLI"
+                  },
+                  "scriptContent": {
+                    "value": "set -euo pipefail\r\nCLUSTER_NAME=\"$1\"\r\nCLUSTER_LOCATION=\"$2\"\r\nPOLICY_B64=\"$3\"\r\nCLUSTER_URI=\"https://${CLUSTER_NAME}.${CLUSTER_LOCATION}.kusto.windows.net\"\r\nPOLICY=$(echo \"$POLICY_B64\" | base64 -d)\r\nKQL=\".alter cluster policy callout @'${POLICY}'\"\r\nPAYLOAD=$(jq -nc --arg csl \"$KQL\" '{csl:$csl}')\r\necho \"Sleeping 30s for Kusto principal-assignment propagation...\"\r\nsleep 30\r\nTOKEN=$(az account get-access-token --resource \"$CLUSTER_URI\" --query accessToken -o tsv)\r\nfor attempt in 1 2 3 4 5; do\r\n  echo \"Attempt ${attempt}: POST .alter cluster policy callout to ${CLUSTER_URI}/v1/rest/mgmt\"\r\n  HTTP_CODE=$(curl -sS -o /tmp/kusto_resp.json -w \"%{http_code}\" -X POST \"${CLUSTER_URI}/v1/rest/mgmt\" \\\r\n    -H \"Authorization: Bearer ${TOKEN}\" \\\r\n    -H \"Content-Type: application/json\" \\\r\n    --data \"$PAYLOAD\" || true)\r\n  echo \"HTTP ${HTTP_CODE}\"\r\n  cat /tmp/kusto_resp.json || true\r\n  echo \"\"\r\n  if [ \"$HTTP_CODE\" = \"200\" ]; then\r\n    echo \"Callout policy applied successfully.\"\r\n    exit 0\r\n  fi\r\n  echo \"Attempt ${attempt} failed (HTTP ${HTTP_CODE}). Retrying in 20s...\"\r\n  sleep 20\r\ndone\r\necho \"ERROR: Failed to apply Kusto callout policy after 5 attempts.\"\r\nexit 1\r\n"
+                  },
+                  "arguments": {
+                    "value": "[format('{0} {1} {2}', parameters('kustoClusterName'), parameters('location'), base64(parameters('calloutPolicy')))]"
+                  },
+                  "userAssignedMIId": {
+                    "value": "[parameters('calloutPolicyUamiResourceId')]"
+                  },
+                  "tags": {
+                    "value": "[variables('kustoTags')]"
+                  },
+                  "timeout": {
+                    "value": "PT30M"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.44.1.10279",
+                      "templateHash": "4583673213472679312"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "scriptName": {
+                      "type": "string"
+                    },
+                    "scriptVersion": {
+                      "type": "string"
+                    },
+                    "scriptContent": {
+                      "type": "string"
+                    },
+                    "arguments": {
+                      "type": "string"
+                    },
+                    "userAssignedMIId": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "retentionInterval": {
+                      "type": "string",
+                      "defaultValue": "PT1H"
+                    },
+                    "forceUpdate": {
+                      "type": "bool",
+                      "defaultValue": false
+                    },
+                    "utcTime": {
+                      "type": "string",
+                      "defaultValue": "[utcNow()]"
+                    },
+                    "scriptKind": {
+                      "type": "string",
+                      "defaultValue": "AzureCLI",
+                      "allowedValues": [
+                        "AzureCLI",
+                        "AzurePowerShell"
+                      ]
+                    },
+                    "timeout": {
+                      "type": "string",
+                      "defaultValue": "PT30M",
+                      "allowedValues": [
+                        "PT30M",
+                        "PT60M"
+                      ]
+                    },
+                    "cleanupPreference": {
+                      "type": "string",
+                      "defaultValue": "OnSuccess"
+                    }
+                  },
+                  "variables": {
+                    "isAzureCLI": "[equals(parameters('scriptKind'), 'AzureCLI')]",
+                    "versionProps": "[if(variables('isAzureCLI'), createObject('azCliVersion', parameters('scriptVersion')), createObject('azPowerShellVersion', parameters('scriptVersion')))]"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Resources/deploymentScripts",
+                      "apiVersion": "2020-10-01",
+                      "name": "[parameters('scriptName')]",
+                      "location": "[parameters('location')]",
+                      "kind": "[parameters('scriptKind')]",
+                      "identity": {
+                        "type": "UserAssigned",
+                        "userAssignedIdentities": {
+                          "[format('{0}', parameters('userAssignedMIId'))]": {}
+                        }
+                      },
+                      "properties": "[union(variables('versionProps'), createObject('scriptContent', parameters('scriptContent'), 'arguments', parameters('arguments'), 'cleanupPreference', parameters('cleanupPreference'), 'retentionInterval', parameters('retentionInterval'), 'forceUpdateTag', parameters('utcTime'), 'timeout', parameters('timeout')))]",
+                      "tags": "[parameters('tags')]"
+                    }
+                  ],
+                  "outputs": {
+                    "scriptOutput": {
+                      "type": "object",
+                      "value": "[coalesce(tryGet(reference(resourceId('Microsoft.Resources/deploymentScripts', parameters('scriptName')), '2020-10-01'), 'outputs'), createObject())]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "grantCalloutPolicyAdmin"
+              ]
             }
           }
         }
       },
       "dependsOn": [
-        "synapseWS"
+        "synapseWS",
+        "userAssignedMI"
       ]
     },
     "kustoPipelineDeploymentScript": {
@@ -5610,8 +5948,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.43.8.12551",
-              "templateHash": "9879112902476063819"
+              "version": "0.44.1.10279",
+              "templateHash": "4583673213472679312"
             }
           },
           "parameters": {
